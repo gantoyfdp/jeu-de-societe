@@ -920,7 +920,7 @@ function afficherActions() {
     else { statut.textContent = 'À vous de jouer'; statut.style.color = 'var(--vert)'; }
   }
 
-  // Indicateur combien ont joué
+  // Indicateur
   const indicateur = document.getElementById('indicateur-tour');
   if (indicateur && etat.actions_tour) {
     const actifs = etat.ordre_joueurs.filter(jid => {
@@ -932,7 +932,7 @@ function afficherActions() {
   }
 
   // Désactiver boutons si déjà joué
-  ['btn-construire','btn-ameliorer','btn-activer','btn-assassiner','btn-fin'].forEach(id => {
+  ['btn-construire','btn-ameliorer','btn-activer','btn-fin'].forEach(id => {
     const btn = document.getElementById(id);
     if (btn) {
       btn.disabled = !peut_jouer;
@@ -940,11 +940,11 @@ function afficherActions() {
     }
   });
 
-  // Bouton fin d'action
+  // Fin d'action
   const btn_fin = document.getElementById('btn-fin');
-  if (btn_fin) btn_fin.textContent = a_deja_joue ? '✓ Joué' : '✓ Fin d'action';
+  if (btn_fin) btn_fin.textContent = a_deja_joue ? '✓ Joué' : "✓ Fin d'action";
 
-  // Bouton prise de pouvoir — conditionnel à la carte en main
+  // Prise de pouvoir — conditionnel à la carte
   const btn_pouvoir = document.getElementById('btn-pouvoir');
   if (btn_pouvoir) {
     const a_carte_pp = ma_main_privee.some(c => c.effet === 'prise_de_pouvoir');
@@ -953,9 +953,9 @@ function afficherActions() {
     btn_pouvoir.style.opacity = peut_jouer ? '1' : '0.5';
   }
 
-  // Fragments de complot
+  // Assassinat
   const seuil_fragment = moi.role === 'espion' ? 1 : 2;
-  const btn_assassinat = document.getElementById('btn-assassiner') || document.querySelector('[onclick="ouvrirModalAssassinat()"]');
+  const btn_assassinat = document.getElementById('btn-assassiner');
   if (btn_assassinat) {
     btn_assassinat.textContent = `🗡 Assassiner (${moi.fragments_complot}/${seuil_fragment})`;
     const peut_assassiner = moi.fragments_complot >= seuil_fragment && peut_jouer;
