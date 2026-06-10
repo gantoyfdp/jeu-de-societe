@@ -575,8 +575,7 @@ function traiterAction(partie, joueur, joueur_id, type_action, donnees, socket) 
     return;
   }
 
-  // Verrou : une seule action principale par tour sauf actions libres
-  if (!actions_libres.includes(type_action) && type_action !== 'fin_action') {
+  if (!actions_libres.includes(type_action)) {
     if (partie.actions_tour[joueur_id]) {
       socket.emit('erreur', 'Vous avez déjà joué votre action ce tour.');
       return;
@@ -647,23 +646,21 @@ function traiterAction(partie, joueur, joueur_id, type_action, donnees, socket) 
       const { carte_uid, cible_id, choix } = donnees;
       const idx = joueur.main.findIndex(c => c.uid === carte_uid);
       if (idx === -1) {
-        partie.actions_tour[joueur_id] = false; // Annuler le verrou
+        partie.actions_tour[joueur_id] = false;
         return socket.emit('erreur', 'Carte introuvable dans votre main.');
       }
-      // On garde la carte en main pendant l'exécution
       const carte = joueur.main[idx];
       let erreur_carte = false;
       const socket_wrap = {
         emit: (event, msg) => {
           if (event === 'erreur') {
             erreur_carte = true;
-            partie.actions_tour[joueur_id] = false; // Annuler le verrou
+            partie.actions_tour[joueur_id] = false;
           }
           socket.emit(event, msg);
         }
       };
       appliquerEffetCarte(partie, joueur, joueur_id, carte, cible_id, choix, socket_wrap);
-      // Retirer de la main et mettre en défausse seulement si succès
       if (!erreur_carte) {
         joueur.main.splice(idx, 1);
         if (!carte.hors_jeu) partie.defausse.push(carte);
@@ -778,15 +775,15 @@ function traiterAction(partie, joueur, joueur_id, type_action, donnees, socket) 
 
     case 'fin_action':
       partie.actions_tour[joueur_id] = 'fin';
-      // Vérifier si tous les joueurs actifs ont joué
-      const joueurs_actifs_fin = partie.ordre_joueurs.filter(jid => {
+      const joueurs_devant_jouer = partie.ordre_joueurs.filter(jid => {
         const j = partie.joueurs[jid];
         return j && !j.mort && !j.emprisonne;
       });
-      const tous_joue = joueurs_actifs_fin.every(jid => partie.actions_tour[jid]);
-      journaliser(partie, `${joueur.nom} a terminé son action (${joueurs_actifs_fin.filter(jid => partie.actions_tour[jid]).length}/${joueurs_actifs_fin.length} joueurs prêts).`);
+      const tous_joue = joueurs_devant_jouer.every(jid => partie.actions_tour[jid]);
+      const nb_prets = joueurs_devant_jouer.filter(jid => partie.actions_tour[jid]).length;
+      journaliser(partie, `${joueur.nom} a terminé (${nb_prets}/${joueurs_devant_jouer.length} prêts).`);
       if (tous_joue) {
-        journaliser(partie, `--- Tous les joueurs ont joué — passage au tour suivant ---`, 'systeme');
+        journaliser(partie, `Tous les joueurs ont joué — tour suivant.`, 'systeme');
         avancerTour(partie);
       }
       break;
@@ -888,373 +885,9 @@ function appliquerEffetCarte(partie, joueur, joueur_id, carte, cible_id, choix, 
       break;
     }
 
-    case 'casino': {
-      // 3 dés joueur vs 3 dés banque
-      const des_joueur = [de(), de(), de()];
-      const des_banque = [de(), de(), de()];
-      let gain = 0;
-      let identiques = 0;
-      let ordre_identique = true;
-
-      // Compter chiffres identiques (peu importe l'ordre)
-      const joueur_sorted = [...des_joueur].sort();
-      const banque_sorted = [...des_banque].sort();
-      for (let i = 0; i < 3; i++) {
-        if (joueur_sorted[i] === banque_sorted[i]) identiques++;
-      }
-
-      // Vérifier ordre identique
-      for (let i = 0; i < 3; i++) {
-        if (des_joueur[i] !== des_banque[i]) { ordre_identique = false; break; }
-      }
-
-      if (ordre_identique) gain = 10;
-      else if (identiques === 3) gain = 6;
-      else if (identiques === 2) gain = 4;
-      else if (identiques === 1) gain = 2;
-
-      joueur.or += gain;
-      journaliser(partie, `🎲 Casino ! ${joueur.nom} [${des_joueur.join('-')}] vs banque [${des_banque.join('-')}] → +${gain} or.`, 'evenement');
-      break;
-    }
-
-    case 'coup_etat': {
-      if (!partie.joueur_au_pouvoir) return socket.emit('erreur', 'Aucun régime en place.');
-      const pouvoir = partie.joueurs[partie.joueur_au_pouvoir];
-      // Duel militaire : attaquant lance dés selon pts caserne, défenseur a pts garantis + dés
-      const pts_attaquant = calculerNiveauMilitaire(joueur);
-      const pts_defenseur = calculerNiveauMilitaire(pouvoir);
-      const { attaquant_total, defenseur_total, log } = duelMilitaire(pts_attaquant, pts_defenseur, joueur.nom, pouvoir.nom);
-
-      journaliser(partie, `⚔️ Coup d'état ! ${log}`, 'combat');
-
-      if (attaquant_total > defenseur_total) {
-        // Victoire attaquant — renversement destructif, tous perdent de l'or sauf lui
-        Object.entries(partie.joueurs).forEach(([jid, j]) => {
-          if (jid !== joueur_id && !j.mort) {
-            const perte = Math.min(3, j.or);
-            j.or -= perte;
-            journaliser(partie, `${j.nom} perd ${perte} or (instabilité).`);
-          }
-        });
-        journaliser(partie, `${joueur.nom} renverse le régime par la force !`, 'combat');
-        retournerAnarchie(partie, 'destructif');
-      } else {
-        journaliser(partie, `Le coup d'état échoue. ${pouvoir.nom} se maintient au pouvoir.`, 'combat');
-      }
-      break;
-    }
-
-    case 'automatisation': {
-      // Choisir un bâtiment à automatiser
-      if (!choix?.bat_uid) return socket.emit('erreur', 'Bâtiment requis.');
-      const bat = joueur.quartier.find(b => b.uid === choix.bat_uid);
-      if (!bat) return socket.emit('erreur', 'Bâtiment introuvable.');
-      bat.automatise = true;
-      journaliser(partie, `⚡ ${joueur.nom} automatise ${BATIMENTS[bat.type]?.nom}. Production permanente.`);
-      break;
-    }
-
-    case 'desautomatisation': {
-      if (!cible) return socket.emit('erreur', 'Cible requise.');
-      if (joueur.or < partie.regles.cout_desautomatisation) return socket.emit('erreur', `${partie.regles.cout_desautomatisation} or requis.`);
-      const bat_auto = cible.quartier.find(b => b.automatise || b.auto_production);
-      if (!bat_auto) return socket.emit('erreur', 'Aucun bâtiment automatisé chez cette cible.');
-      joueur.or -= partie.regles.cout_desautomatisation;
-      bat_auto.automatise = false;
-      bat_auto.auto_production = false;
-      journaliser(partie, `🔧 ${joueur.nom} désautomatise ${BATIMENTS[bat_auto.type]?.nom} de ${cible.nom}.`);
-      break;
-    }
-
-    case 'purge': {
-      if (!partie.joueur_au_pouvoir || partie.regime_actuel !== 'totalitarisme') return;
-      if (!choix?.type_batiment) return socket.emit('erreur', 'Type de bâtiment requis.');
-      const type_bat = choix.type_batiment;
-      // Trouver les 2 joueurs avec le niveau le plus bas dans ce bâtiment
-      const niveaux = partie.ordre_joueurs
-        .filter(jid => jid !== partie.joueur_au_pouvoir && !partie.joueurs[jid]?.mort)
-        .map(jid => {
-          const j = partie.joueurs[jid];
-          const bat = j.quartier.filter(b => b.type === type_bat).reduce((max, b) => Math.max(max, b.niveau), 0);
-          return { jid, niveau: bat, nom: j.nom };
-        })
-        .sort((a, b) => a.niveau - b.niveau);
-
-      if (niveaux.length < 2) return socket.emit('erreur', 'Pas assez de joueurs.');
-      const j1 = partie.joueurs[niveaux[0].jid];
-      const j2 = partie.joueurs[niveaux[1].jid];
-      const pts1 = calculerNiveauMilitaire(j1);
-      const pts2 = calculerNiveauMilitaire(j2);
-      const { attaquant_total, defenseur_total, log } = duelMilitaire(pts1, pts2, j1.nom, j2.nom);
-      journaliser(partie, `🔪 Purge ! ${BATIMENTS[type_bat]?.nom} — ${log}`, 'combat');
-      const perdant = attaquant_total <= defenseur_total ? j1 : j2;
-      const perdant_id = attaquant_total <= defenseur_total ? niveaux[0].jid : niveaux[1].jid;
-      appliquerMort(partie, perdant, perdant_id, 'la Purge');
-      break;
-    }
-
-    case 'guerre_totale': {
-      if (!partie.joueur_au_pouvoir || partie.regime_actuel !== 'totalitarisme') return;
-      const totalitaire = partie.joueurs[partie.joueur_au_pouvoir];
-      // Coalition = joueurs avec cartes Résistance en main
-      const coalition = partie.ordre_joueurs
-        .filter(jid => {
-          if (jid === partie.joueur_au_pouvoir) return false;
-          const j = partie.joueurs[jid];
-          return j && !j.mort && j.main.some(c => c.effet === 'resistance');
-        });
-
-      if (coalition.length === 0) {
-        journaliser(partie, `Guerre totale — aucune résistance organisée. ${totalitaire.nom} se maintient.`, 'combat');
-        break;
-      }
-
-      // Dés coalition : somme des pts militaires de tous les résistants
-      const pts_coalition = coalition.reduce((sum, jid) => sum + calculerNiveauMilitaire(partie.joueurs[jid]), 0);
-      const des_coalition = Math.max(1, pts_coalition);
-      const des_totalitaire = Math.max(1, calculerNiveauMilitaire(totalitaire));
-
-      // Bonus totalitaire : +1 dé par opposant emprisonné
-      const emprisonnes = partie.ordre_joueurs.filter(jid => partie.joueurs[jid]?.emprisonne && jid !== partie.joueur_au_pouvoir).length;
-      const total_coalition = lancerDes(des_coalition);
-      const total_totalitaire = lancerDes(des_totalitaire + emprisonnes);
-
-      journaliser(partie, `⚡ Guerre totale ! Coalition [${des_coalition} dés] = ${total_coalition} vs ${totalitaire.nom} [${des_totalitaire + emprisonnes} dés] = ${total_totalitaire}`, 'combat');
-
-      // Retirer cartes Résistance des mains
-      coalition.forEach(jid => {
-        const j = partie.joueurs[jid];
-        const idx = j.main.findIndex(c => c.effet === 'resistance');
-        if (idx !== -1) {
-          const carte_res = j.main.splice(idx, 1)[0];
-          partie.deck_regime.push(carte_res); // Remise dans le deck
-          partie.deck_regime = melangerDeck(partie.deck_regime);
-        }
-      });
-
-      if (total_coalition > total_totalitaire) {
-        journaliser(partie, `La coalition l'emporte ! Retour à l'anarchie.`, 'combat');
-        retournerAnarchie(partie, 'destructif');
-      } else {
-        // Le plus faible résistant meurt
-        const plus_faible_id = coalition.sort((a, b) =>
-          calculerNiveauMilitaire(partie.joueurs[a]) - calculerNiveauMilitaire(partie.joueurs[b])
-        )[0];
-        const plus_faible = partie.joueurs[plus_faible_id];
-        journaliser(partie, `${totalitaire.nom} écrase la résistance ! ${plus_faible.nom} meurt.`, 'combat');
-        appliquerMort(partie, plus_faible, plus_faible_id, totalitaire.nom);
-      }
-      break;
-    }
-
-    case 'panne_systemique': {
-      partie.panne_systemique_tours = partie.regles.duree_panne_systemique;
-      journaliser(partie, `💥 Panne systémique ! Tous les bâtiments automatisés sont hors service pendant ${partie.regles.duree_panne_systemique} tours.`, 'evenement');
-      break;
-    }
-
-    case 'calcul_efficacite': {
-      if (!choix?.type_batiment) return socket.emit('erreur', 'Type de bâtiment requis.');
-      const type = choix.type_batiment;
-      // Trouver le joueur avec le niveau le plus bas
-      let min_niveau = Infinity;
-      let perdant_eff = null;
-      partie.ordre_joueurs.forEach(jid => {
-        const j = partie.joueurs[jid];
-        if (!j || j.mort) return;
-        const niv = j.quartier.filter(b => b.type === type).reduce((max, b) => Math.max(max, b.niveau), 0);
-        if (niv < min_niveau) { min_niveau = niv; perdant_eff = j; }
-      });
-      if (perdant_eff) {
-        perdant_eff.influence = Math.max(0, perdant_eff.influence - 3);
-        journaliser(partie, `📊 Calcul d'efficacité (${BATIMENTS[type]?.nom}) — ${perdant_eff.nom} perd 3 influence.`);
-      }
-      break;
-    }
-
-    case 'putsch': {
-      if (partie.regime_actuel !== 'totalitarisme') return;
-      // Les 2 joueurs les plus influents hors dictateur
-      const candidats = partie.ordre_joueurs
-        .filter(jid => jid !== partie.joueur_au_pouvoir && !partie.joueurs[jid]?.mort)
-        .sort((a, b) => partie.joueurs[b].influence - partie.joueurs[a].influence)
-        .slice(0, 2);
-      if (candidats.length < 2) return;
-
-      if (choix === 'affronter') {
-        const j1 = partie.joueurs[candidats[0]];
-        const j2 = partie.joueurs[candidats[1]];
-        const des1 = Math.max(1, Math.ceil(j1.influence / 5));
-        const des2 = Math.max(1, Math.ceil(j2.influence / 5));
-        const t1 = lancerDes(des1);
-        const t2 = lancerDes(des2);
-        journaliser(partie, `⚔️ Putsch — duel ! ${j1.nom} [${des1}d] = ${t1} vs ${j2.nom} [${des2}d] = ${t2}`, 'combat');
-        if (t1 <= t2) {
-          j1.influence = Math.floor(j1.influence / 2);
-          journaliser(partie, `${j1.nom} perd la moitié de son influence.`);
-        } else {
-          j2.influence = Math.floor(j2.influence / 2);
-          journaliser(partie, `${j2.nom} perd la moitié de son influence.`);
-        }
-      } else {
-        // S'allier contre le dictateur
-        journaliser(partie, `${partie.joueurs[candidats[0]].nom} et ${partie.joueurs[candidats[1]].nom} s'allient contre le dictateur !`, 'evenement');
-        io.to(partie.id).emit('alliance_putsch', { joueurs: candidats });
-      }
-      break;
-    }
-
-    case 'excommunication': {
-      if (!cible) return socket.emit('erreur', 'Cible requise.');
-      const temple_cible = cible.quartier.find(b => b.type === 'temple');
-      if (!temple_cible) return socket.emit('erreur', 'La cible n\'a pas de temple.');
-      temple_cible.niveau = Math.max(1, temple_cible.niveau - 1);
-      // Monter temple lanceur
-      const temple_lanceur = joueur.quartier.find(b => b.type === 'temple');
-      if (temple_lanceur && temple_lanceur.niveau < BATIMENTS.temple.niveaux_max) {
-        temple_lanceur.niveau += 1;
-        journaliser(partie, `✝️ Excommunication ! Temple de ${cible.nom} -1. Temple de ${joueur.nom} +1.`);
-      } else {
-        journaliser(partie, `✝️ Excommunication ! Temple de ${cible.nom} -1.`);
-      }
-      break;
-    }
-
-    case 'tag_blasphematoire': {
-      if (!cible) return socket.emit('erreur', 'Cible requise.');
-      // Duel de base 1 dé chacun + possibilité sacrifice influence
-      const sacrifice_joueur = choix?.sacrifice_joueur || 0;
-      const sacrifice_cible = choix?.sacrifice_cible || 0;
-      joueur.influence = Math.max(0, joueur.influence - sacrifice_joueur);
-      cible.influence = Math.max(0, cible.influence - sacrifice_cible);
-      const d1 = lancerDes(1 + sacrifice_joueur);
-      const d2 = lancerDes(1 + sacrifice_cible);
-      journaliser(partie, `⚡ Tag blasphématoire ! ${joueur.nom} [${d1}] vs ${cible.nom} [${d2}]`, 'combat');
-      const perdant_tag = d1 >= d2 ? cible : joueur;
-      const temple_perdant = perdant_tag.quartier.find(b => b.type === 'temple');
-      if (temple_perdant) {
-        temple_perdant.niveau = Math.max(1, temple_perdant.niveau - 1);
-        journaliser(partie, `${perdant_tag.nom} perd 1 niveau de temple.`);
-      } else {
-        perdant_tag.influence = Math.max(0, perdant_tag.influence - 2);
-        journaliser(partie, `${perdant_tag.nom} perd 2 influence (pas de temple).`);
-      }
-      break;
-    }
-
-    case 'conversion_forcee': {
-      if (!cible) return socket.emit('erreur', 'Cible requise.');
-      const a_temple = cible.quartier.some(b => b.type === 'temple');
-      if (a_temple) return socket.emit('erreur', `${cible.nom} a déjà un temple.`);
-      if (cible.quartier.length >= partie.regles.emplacements_quartier) return socket.emit('erreur', 'Quartier de la cible plein.');
-      cible.quartier.push({ type: 'temple', niveau: 1, automatise: false, uid: `${cible_id}_temple_${Date.now()}` });
-      journaliser(partie, `⛪ Conversion forcée ! ${cible.nom} doit construire un temple.`, 'evenement');
-      break;
-    }
-
-    case 'monopole': {
-      if (!choix?.type_ressource) return socket.emit('erreur', 'Type de ressource requis.');
-      partie.monopole_actif = { joueur_id, type: choix.type_ressource };
-      journaliser(partie, `💎 Monopole ! ${joueur.nom} contrôle la ressource : ${choix.type_ressource}.`, 'evenement');
-      break;
-    }
-
-    case 'embargo': {
-      if (!cible_id) return socket.emit('erreur', 'Cible requise.');
-      if (joueur.or < partie.regles.cout_embargo_installation) return socket.emit('erreur', `${partie.regles.cout_embargo_installation} or requis.`);
-      joueur.or -= partie.regles.cout_embargo_installation;
-      partie.embargo_actif = { source_id: joueur_id, cible_id, tours_restants: 999 };
-      journaliser(partie, `🚫 Embargo ! ${joueur.nom} isole ${cible.nom}. Coût : ${partie.regles.cout_embargo_maintien} or/tour.`, 'evenement');
-      break;
-    }
-
-    case 'plaie_divine': {
-      // Pénalise les joueurs ayant commis un acte blasphématoire ce tour
-      // Hérésie = l'action désignée au début de la Théocratie
-      const heresie = partie.heresy_action;
-      journaliser(partie, `☁️ Plaie divine ! Tous les blasphémateurs sont punis.`, 'evenement');
-      // Sans tracking fin d'action, on applique une pénalité générale aux non-convertis
-      partie.ordre_joueurs.forEach(jid => {
-        const j = partie.joueurs[jid];
-        if (!j || j.mort || jid === partie.joueur_au_pouvoir) return;
-        const a_temple = j.quartier.some(b => b.type === 'temple');
-        if (!a_temple) {
-          j.influence = Math.max(0, j.influence - 1);
-          const bat_caserne = j.quartier.find(b => b.type === 'caserne');
-          if (bat_caserne) bat_caserne.niveau = Math.max(1, bat_caserne.niveau - 1);
-          journaliser(partie, `${j.nom} est puni (1 inf, 1 niveau caserne).`);
-        }
-      });
-      break;
-    }
-
-    case 'coalition': {
-      // Joueurs avec carte Coalition gagnent +3 influence
-      const bonus = partie.regles.bonus_benediction || 3;
-      joueur.influence += bonus;
-      journaliser(partie, `🤝 Coalition ! ${joueur.nom} gagne +${bonus} influence.`);
-      break;
-    }
-
-    case 'revolt_cour': {
-      // Blocage action principale du Monarque
-      if (!partie.joueur_au_pouvoir || partie.regime_actuel !== 'monarchie') return;
-      const pouvoir_m = partie.joueurs[partie.joueur_au_pouvoir];
-      partie.monarque_bloque = (partie.monarque_bloque || 0) + 1;
-      journaliser(partie, `⚔️ Révolte de la cour ! ${pouvoir_m.nom} perd ${partie.monarque_bloque} action(s) principale(s).`, 'evenement');
-      break;
-    }
-
-    case 'droit_divin': {
-      joueur.droit_divin = true;
-      journaliser(partie, `✝️ ${joueur.nom} invoque le Droit divin. Protégé contre les attaques religieuses.`);
-      break;
-    }
-
-    case 'heritier': {
-      if (joueur_id === partie.joueur_au_pouvoir && partie.regime_actuel === 'monarchie') {
-        joueur.a_heritier = true;
-        journaliser(partie, `👑 ${joueur.nom} établit sa succession. Le régime survivra à sa mort.`);
-      } else if (cible_id === partie.joueur_au_pouvoir) {
-        const monarque = partie.joueurs[partie.joueur_au_pouvoir];
-        monarque.influence = Math.max(0, monarque.influence - 4);
-        journaliser(partie, `${joueur.nom} conteste la légitimité du Monarque. -4 influence.`);
-      }
-      break;
-    }
-
     default:
       journaliser(partie, `Carte jouée : ${carte.nom}.`);
   }
-}
-
-// ============================================================
-// UTILITAIRES DUEL
-// ============================================================
-function de() {
-  return Math.floor(Math.random() * 6) + 1;
-}
-
-function lancerDes(nb) {
-  let total = 0;
-  for (let i = 0; i < Math.max(1, nb); i++) total += de();
-  return total;
-}
-
-function duelMilitaire(pts_attaquant, pts_defenseur, nom_att, nom_def) {
-  // Attaquant : lance pts_attaquant dés
-  const des_att = Math.max(1, pts_attaquant);
-  const res_att = lancerDes(des_att);
-
-  // Défenseur : pts garantis + lance des dés
-  const pts_garantis = pts_defenseur;
-  const des_def = Math.max(1, pts_defenseur);
-  const res_def_lance = lancerDes(des_def);
-  const res_def = pts_garantis + res_def_lance;
-
-  const log = `${nom_att} [${des_att}d = ${res_att}] vs ${nom_def} [${pts_garantis} garantis + ${res_def_lance} lancés = ${res_def}]`;
-  return { attaquant_total: res_att, defenseur_total: res_def, log };
 }
 
 function traiterRevoltePopulaire(partie, joueur, joueur_id, socket) {
@@ -1398,35 +1031,10 @@ function avancerTour(partie) {
   // Vérifier victoire
   verifierVictoire(partie);
 
-  // Élections républicaines automatiques
-  if (partie.regime_actuel === 'republique' && partie.tours_regime_actuel > 0 && partie.tours_regime_actuel % 5 === 0) {
-    const president = partie.joueurs[partie.joueur_au_pouvoir];
-    const challengers = partie.ordre_joueurs
-      .filter(jid => jid !== partie.joueur_au_pouvoir && !partie.joueurs[jid]?.mort)
-      .map(jid => ({ jid, influence: partie.joueurs[jid].influence }))
-      .sort((a, b) => b.influence - a.influence);
-    const top = challengers[0];
-    if (top && top.influence > president.influence) {
-      const nouveau = partie.joueurs[top.jid];
-      journaliser(partie, `🗳️ Élections ! ${nouveau.nom} (${top.influence} inf) dépasse ${president.nom} — nouveau président !`, 'systeme');
-      partie.joueur_au_pouvoir = top.jid;
-      partie.tours_regime_actuel = 0;
-      io.to(partie.id).emit('elections_resultat', { gagnant: nouveau.nom, perdant: president.nom });
-    } else {
-      journaliser(partie, `🗳️ Élections ! ${president.nom} se maintient au pouvoir.`, 'systeme');
-      partie.tours_regime_actuel = 0;
-    }
-  }
-
-  // Embargo — maintien
-  if (partie.embargo_actif) {
-    const source = partie.joueurs[partie.embargo_actif.source_id];
-    if (source && source.or >= partie.regles.cout_embargo_maintien) {
-      source.or -= partie.regles.cout_embargo_maintien;
-    } else {
-      journaliser(partie, `🚫 Embargo levé — ${source?.nom} ne peut plus payer.`);
-      partie.embargo_actif = null;
-    }
+  // Élections républicaines
+  if (partie.regime_actuel === 'republique' && partie.tours_regime_actuel % 5 === 0) {
+    journaliser(partie, `🗳️ Élections automatiques ! 5 tours de République écoulés.`, 'systeme');
+    io.to(partie.id).emit('elections', { tours: partie.tours_regime_actuel });
   }
 
   journaliser(partie, `--- Tour ${partie.tour} ---`, 'systeme');
