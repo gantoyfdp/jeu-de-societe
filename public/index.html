@@ -641,14 +641,15 @@
 
       <!-- Actions -->
       <div class="actions-panel">
-        <div class="section-titre">Actions</div>
+        <div class="section-titre">Actions — <span id="statut-action" style="color:var(--or)">En attente</span></div>
+        <div id="indicateur-tour" style="font-size:11px;color:var(--texte-faible);margin:8px 0;padding:6px;background:var(--gris-moyen)"></div>
         <div class="actions-grille" id="actions-grille">
-          <button class="btn btn-sm" onclick="ouvrirModalConstruction()">🏗 Construire</button>
-          <button class="btn btn-sm" onclick="ouvrirModalAmelioration()">⬆ Améliorer</button>
-          <button class="btn btn-sm" onclick="activerBatiment()">⚡ Activer bâtiment</button>
-          <button class="btn btn-sm" onclick="ouvrirModalRegime()">👑 Prendre le pouvoir</button>
-          <button class="btn btn-sm btn-danger" onclick="ouvrirModalAssassinat()">🗡 Assassiner</button>
-          <button class="btn btn-sm" onclick="finAction()">✓ Fin d'action</button>
+          <button class="btn btn-sm" id="btn-construire" onclick="ouvrirModalConstruction()">🏗 Construire</button>
+          <button class="btn btn-sm" id="btn-ameliorer" onclick="ouvrirModalAmelioration()">⬆ Améliorer</button>
+          <button class="btn btn-sm" id="btn-activer" onclick="activerBatiment()">⚡ Activer bâtiment</button>
+          <button class="btn btn-sm" id="btn-pouvoir" onclick="ouvrirModalRegime()" style="display:none">👑 Prendre le pouvoir</button>
+          <button class="btn btn-sm btn-danger" id="btn-assassiner" onclick="ouvrirModalAssassinat()">🗡 Assassiner</button>
+          <button class="btn btn-primaire btn-sm" id="btn-fin" onclick="finAction()">✓ Fin d'action</button>
         </div>
       </div>
 
@@ -904,17 +905,65 @@ function afficherMonQuartier() {
 }
 
 function afficherActions() {
-  // Mettre à jour les boutons selon l'état
   const moi = etat.joueurs[mon_id];
   if (!moi) return;
 
+  const a_deja_joue = etat.actions_tour && etat.actions_tour[mon_id];
+  const est_mon_tour = !a_deja_joue && !moi.mort && !moi.emprisonne;
+
+  // Statut
+  const statut = document.getElementById('statut-action');
+  if (statut) {
+    if (moi.mort) statut.textContent = 'Mort';
+    else if (moi.emprisonne) statut.textContent = 'Emprisonné';
+    else if (a_deja_joue) statut.textContent = 'Action jouée — en attente des autres';
+    else statut.textContent = 'À vous de jouer';
+    statut.style.color = est_mon_tour ? 'var(--vert)' : 'var(--texte-faible)';
+  }
+
+  // Indicateur qui a joué
+  const indicateur = document.getElementById('indicateur-tour');
+  if (indicateur && etat.actions_tour) {
+    const joueurs_actifs = etat.ordre_joueurs.filter(jid => {
+      const j = etat.joueurs[jid];
+      return j && !j.mort && !j.emprisonne;
+    });
+    const prets = joueurs_actifs.filter(jid => etat.actions_tour[jid]).length;
+    indicateur.textContent = `${prets}/${joueurs_actifs.length} joueurs ont joué ce tour`;
+  }
+
+  // Désactiver boutons si déjà joué
+  ['btn-construire','btn-ameliorer','btn-activer','btn-assassiner'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) {
+      btn.disabled = !est_mon_tour;
+      btn.style.opacity = est_mon_tour ? '1' : '0.4';
+    }
+  });
+
+  // Bouton fin d'action
+  const btn_fin = document.getElementById('btn-fin');
+  if (btn_fin) {
+    btn_fin.disabled = a_deja_joue;
+    btn_fin.style.opacity = a_deja_joue ? '0.4' : '1';
+    btn_fin.textContent = a_deja_joue ? '✓ Joué' : '✓ Fin d'action';
+  }
+
+  // Bouton prise de pouvoir — seulement si carte en main
+  const btn_pouvoir = document.getElementById('btn-pouvoir');
+  if (btn_pouvoir) {
+    const a_carte_pp = ma_main_privee.some(c => c.effet === 'prise_de_pouvoir');
+    btn_pouvoir.style.display = a_carte_pp && est_mon_tour ? 'block' : 'none';
+  }
+
   // Fragments de complot
   const seuil_fragment = moi.role === 'espion' ? 1 : 2;
-  const btn_assassinat = document.querySelector('[onclick="ouvrirModalAssassinat()"]');
+  const btn_assassinat = document.getElementById('btn-assassiner');
   if (btn_assassinat) {
     btn_assassinat.textContent = `🗡 Assassiner (${moi.fragments_complot}/${seuil_fragment})`;
-    btn_assassinat.disabled = moi.fragments_complot < seuil_fragment;
-    btn_assassinat.style.opacity = moi.fragments_complot < seuil_fragment ? '0.4' : '1';
+    const peut_assassiner = moi.fragments_complot >= seuil_fragment && est_mon_tour;
+    btn_assassinat.disabled = !peut_assassiner;
+    btn_assassinat.style.opacity = peut_assassiner ? '1' : '0.4';
   }
 }
 
