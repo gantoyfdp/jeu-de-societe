@@ -1,0 +1,1407 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Régimes</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  :root {
+    --noir: #0f0f0f;
+    --gris-fonce: #1a1a1a;
+    --gris-moyen: #2a2a2a;
+    --gris-clair: #3a3a3a;
+    --bordure: #333;
+    --texte: #e8e4d9;
+    --texte-faible: #888;
+    --or: #c9a84c;
+    --influence: #7b9eb8;
+    --rouge: #c0392b;
+    --vert: #27ae60;
+    --violet: #8e44ad;
+    --anarchie: #FF7043;
+    --monarchie: #FFA726;
+    --republique: #42A5F5;
+    --oligarchie: #66BB6A;
+    --theocratie: #AB47BC;
+    --technocratie: #26A69A;
+    --totalitarisme: #EF5350;
+    --font: 'Georgia', serif;
+    --font-ui: 'Arial', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--noir);
+    color: var(--texte);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ============ ÉCRAN D'ACCUEIL ============ */
+  #ecran-accueil {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 32px;
+  }
+
+  .logo {
+    font-family: var(--font);
+    font-size: 72px;
+    letter-spacing: 12px;
+    color: var(--texte);
+    text-transform: uppercase;
+  }
+
+  .logo-sub {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    letter-spacing: 4px;
+    color: var(--texte-faible);
+    text-transform: uppercase;
+    margin-top: -20px;
+  }
+
+  .form-accueil {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 320px;
+  }
+
+  input[type="text"] {
+    background: var(--gris-moyen);
+    border: 1px solid var(--bordure);
+    color: var(--texte);
+    padding: 12px 16px;
+    font-size: 14px;
+    font-family: var(--font-ui);
+    outline: none;
+    width: 100%;
+  }
+
+  input[type="text"]:focus { border-color: var(--or); }
+
+  .btn {
+    background: var(--gris-moyen);
+    border: 1px solid var(--bordure);
+    color: var(--texte);
+    padding: 12px 24px;
+    cursor: pointer;
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    font-family: var(--font-ui);
+    transition: all 0.15s;
+    width: 100%;
+  }
+
+  .btn:hover { background: var(--gris-clair); border-color: var(--or); color: var(--or); }
+  .btn-primaire { background: var(--or); color: var(--noir); border-color: var(--or); font-weight: bold; }
+  .btn-primaire:hover { background: #e0b85a; color: var(--noir); }
+  .btn-danger { border-color: var(--rouge); color: var(--rouge); }
+  .btn-danger:hover { background: var(--rouge); color: white; }
+  .btn-sm { padding: 6px 12px; font-size: 11px; width: auto; }
+
+  /* ============ LOBBY ============ */
+  #ecran-lobby {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 24px;
+  }
+
+  .lobby-titre { font-family: var(--font); font-size: 32px; letter-spacing: 6px; }
+  .lobby-code { font-size: 11px; color: var(--texte-faible); letter-spacing: 3px; }
+  .lobby-joueurs { display: flex; flex-direction: column; gap: 8px; width: 360px; }
+  .lobby-joueur { background: var(--gris-moyen); padding: 12px 16px; border: 1px solid var(--bordure); display: flex; justify-content: space-between; align-items: center; }
+  .lobby-joueur.moi { border-color: var(--or); }
+
+  /* ============ JEU PRINCIPAL ============ */
+  #ecran-jeu {
+    display: none;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* HEADER */
+  .header {
+    background: var(--gris-fonce);
+    border-bottom: 1px solid var(--bordure);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+
+  .header-titre { font-family: var(--font); font-size: 18px; letter-spacing: 4px; }
+
+  .regime-badge {
+    padding: 4px 12px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    border: 1px solid;
+    font-weight: bold;
+  }
+
+  .compteur-anarchie {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--texte-faible);
+  }
+
+  .jauge-anarchie {
+    width: 100px;
+    height: 6px;
+    background: var(--gris-clair);
+    position: relative;
+  }
+
+  .jauge-anarchie-fill {
+    height: 100%;
+    background: var(--rouge);
+    transition: width 0.3s;
+  }
+
+  .header-tour { margin-left: auto; font-size: 12px; color: var(--texte-faible); letter-spacing: 1px; }
+
+  /* LAYOUT PRINCIPAL */
+  .jeu-layout {
+    display: grid;
+    grid-template-columns: 240px 1fr 280px;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* PANNEAU GAUCHE — joueurs */
+  .panneau-gauche {
+    border-right: 1px solid var(--bordure);
+    overflow-y: auto;
+    background: var(--gris-fonce);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .section-titre {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--texte-faible);
+    text-transform: uppercase;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--bordure);
+    margin-bottom: 4px;
+  }
+
+  .joueur-card {
+    background: var(--gris-moyen);
+    border: 1px solid var(--bordure);
+    padding: 10px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .joueur-card:hover { border-color: var(--texte-faible); }
+  .joueur-card.moi { border-color: var(--or); }
+  .joueur-card.au-pouvoir { border-color: var(--monarchie); }
+  .joueur-card.emprisonne { border-color: var(--rouge); opacity: 0.7; }
+  .joueur-card.mort { opacity: 0.4; }
+
+  .joueur-nom { font-weight: bold; font-size: 13px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .joueur-role { font-size: 10px; color: var(--texte-faible); letter-spacing: 1px; }
+
+  .ressources {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    font-size: 12px;
+  }
+
+  .ressource-or { color: var(--or); }
+  .ressource-inf { color: var(--influence); }
+
+  .batiments-mini {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 6px;
+  }
+
+  .batiment-mini {
+    width: 16px;
+    height: 16px;
+    font-size: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+  }
+
+  .badge-fc {
+    background: var(--gris-clair);
+    color: var(--texte-faible);
+    padding: 1px 5px;
+    font-size: 10px;
+    margin-top: 4px;
+    display: inline-block;
+  }
+
+  /* ZONE CENTRALE — quartier + actions */
+  .zone-centrale {
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Mon quartier */
+  .mon-quartier {
+    background: var(--gris-fonce);
+    border: 1px solid var(--bordure);
+    padding: 16px;
+  }
+
+  .quartier-grille {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .emplacement {
+    aspect-ratio: 1;
+    border: 1px solid var(--bordure);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--gris-moyen);
+    position: relative;
+    padding: 6px;
+    gap: 4px;
+  }
+
+  .emplacement.vide {
+    border-style: dashed;
+    color: var(--texte-faible);
+    font-size: 20px;
+  }
+
+  .emplacement.vide:hover { border-color: var(--or); color: var(--or); }
+  .emplacement.occupe:hover { border-color: var(--influence); }
+
+  .bat-emoji { font-size: 20px; }
+  .bat-nom { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--texte-faible); text-align: center; }
+  .bat-niveau { font-size: 10px; color: var(--or); }
+  .bat-auto { position: absolute; top: 2px; right: 2px; font-size: 8px; color: var(--vert); }
+
+  /* Main */
+  .ma-main {
+    background: var(--gris-fonce);
+    border: 1px solid var(--bordure);
+    padding: 16px;
+  }
+
+  .main-cartes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .carte {
+    background: var(--gris-moyen);
+    border: 1px solid var(--bordure);
+    padding: 10px;
+    width: 140px;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+  }
+
+  .carte:hover { border-color: var(--or); transform: translateY(-2px); }
+  .carte.selectionne { border-color: var(--or); background: var(--gris-clair); }
+  .carte.mecanique { border-color: var(--influence); }
+  .carte.evenement { border-color: var(--rouge); }
+  .carte.renversement_destructif { border-color: var(--rouge); }
+  .carte.renversement_constructif { border-color: var(--vert); }
+  .carte.prise_de_pouvoir { border-color: var(--or); }
+
+  .carte-nom { font-size: 12px; font-weight: bold; margin-bottom: 4px; }
+  .carte-desc { font-size: 10px; color: var(--texte-faible); line-height: 1.4; }
+  .carte-type { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--texte-faible); margin-bottom: 4px; }
+
+  /* Actions */
+  .actions-panel {
+    background: var(--gris-fonce);
+    border: 1px solid var(--bordure);
+    padding: 16px;
+  }
+
+  .actions-grille {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  /* PANNEAU DROIT — journal + chat + admin */
+  .panneau-droit {
+    border-left: 1px solid var(--bordure);
+    background: var(--gris-fonce);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .onglets {
+    display: flex;
+    border-bottom: 1px solid var(--bordure);
+    flex-shrink: 0;
+  }
+
+  .onglet {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--texte-faible);
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+
+  .onglet.actif { color: var(--or); border-bottom-color: var(--or); }
+  .onglet:hover { color: var(--texte); }
+
+  .onglet-contenu { display: none; flex: 1; overflow-y: auto; padding: 12px; flex-direction: column; gap: 6px; }
+  .onglet-contenu.actif { display: flex; }
+
+  /* Journal */
+  .journal-entree {
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 4px 8px;
+    border-left: 2px solid var(--bordure);
+    color: var(--texte-faible);
+  }
+
+  .journal-entree.alerte { border-color: var(--rouge); color: var(--texte); }
+  .journal-entree.systeme { border-color: var(--or); color: var(--texte); }
+  .journal-entree.combat { border-color: var(--rouge); }
+  .journal-entree.evenement { border-color: var(--violet); }
+  .journal-tour { font-size: 10px; color: #555; margin-top: 4px; }
+
+  /* Chat */
+  .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+  .chat-msg { font-size: 12px; line-height: 1.5; }
+  .chat-msg .chat-nom { color: var(--or); font-weight: bold; }
+  .chat-input-zone { display: flex; gap: 8px; margin-top: 8px; flex-shrink: 0; }
+  .chat-input-zone input { flex: 1; }
+
+  /* Admin */
+  .admin-regle {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--bordure);
+  }
+
+  .admin-regle label { font-size: 11px; color: var(--texte-faible); }
+  .admin-regle-controls { display: flex; gap: 8px; align-items: center; }
+  .admin-regle input[type="number"] {
+    width: 80px;
+    background: var(--gris-moyen);
+    border: 1px solid var(--bordure);
+    color: var(--texte);
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  /* MODAL */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-overlay.visible { display: flex; }
+
+  .modal {
+    background: var(--gris-fonce);
+    border: 1px solid var(--or);
+    padding: 24px;
+    width: 480px;
+    max-width: 95vw;
+    max-height: 80vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .modal-titre { font-family: var(--font); font-size: 20px; letter-spacing: 3px; }
+  .modal-desc { font-size: 13px; color: var(--texte-faible); line-height: 1.6; }
+  .modal-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* NOTIFICATIONS */
+  .notif-zone {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 200;
+  }
+
+  .notif {
+    background: var(--gris-fonce);
+    border: 1px solid var(--or);
+    padding: 12px 16px;
+    font-size: 13px;
+    max-width: 300px;
+    animation: slideIn 0.3s ease;
+  }
+
+  .notif.erreur { border-color: var(--rouge); color: var(--rouge); }
+  .notif.succes { border-color: var(--vert); color: var(--vert); }
+
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* Étape tour */
+  .etape-tour {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-left: 8px;
+  }
+
+  .etape {
+    padding: 3px 8px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    background: var(--gris-moyen);
+    color: var(--texte-faible);
+    text-transform: uppercase;
+  }
+
+  .etape.actuelle { background: var(--or); color: var(--noir); font-weight: bold; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: var(--gris-fonce); }
+  ::-webkit-scrollbar-thumb { background: var(--gris-clair); }
+
+  .texte-or { color: var(--or); }
+  .texte-inf { color: var(--influence); }
+  .texte-rouge { color: var(--rouge); }
+  .texte-vert { color: var(--vert); }
+  .tag { background: var(--gris-clair); padding: 2px 6px; font-size: 10px; letter-spacing: 1px; }
+
+  /* Construction modal */
+  .batiments-choix {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .batiment-option {
+    background: var(--gris-moyen);
+    border: 1px solid var(--bordure);
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .batiment-option:hover { border-color: var(--or); }
+  .batiment-option .bat-emoji-lg { font-size: 28px; }
+
+  /* Régimes choix */
+  .regimes-choix {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .regime-option {
+    border: 1px solid var(--bordure);
+    padding: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .regime-option:hover { filter: brightness(1.2); }
+  .regime-option .regime-emoji { font-size: 24px; }
+  .regime-option .regime-nom { font-size: 13px; font-weight: bold; }
+  .regime-option .regime-pre { font-size: 10px; color: var(--texte-faible); }
+
+  .invisible { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- NOTIFICATIONS -->
+<div class="notif-zone" id="notif-zone"></div>
+
+<!-- ÉCRAN ACCUEIL -->
+<div id="ecran-accueil">
+  <div>
+    <div class="logo">Régimes</div>
+    <div class="logo-sub">Simulation sociopolitique · 4 à 6 joueurs</div>
+  </div>
+  <div class="form-accueil">
+    <input type="text" id="input-nom" placeholder="Votre nom" maxlength="20">
+    <input type="text" id="input-partie" placeholder="Code de partie" maxlength="8">
+    <button class="btn btn-primaire" onclick="rejoindrePartie()">Rejoindre / Créer</button>
+  </div>
+</div>
+
+<!-- LOBBY -->
+<div id="ecran-lobby">
+  <div class="lobby-titre">Salle d'attente</div>
+  <div class="lobby-code" id="lobby-code"></div>
+  <div class="lobby-joueurs" id="lobby-joueurs"></div>
+  <button class="btn btn-primaire" id="btn-demarrer" onclick="demarrerPartie()">Lancer la partie</button>
+</div>
+
+<!-- JEU -->
+<div id="ecran-jeu">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-titre">Régimes</div>
+    <div class="regime-badge" id="regime-badge">Anarchie 🔥</div>
+    <div class="compteur-anarchie">
+      <span>Anarchie</span>
+      <div class="jauge-anarchie">
+        <div class="jauge-anarchie-fill" id="jauge-anarchie" style="width:0%"></div>
+      </div>
+      <span id="compteur-anarchie-texte">0/10</span>
+    </div>
+    <div class="etape-tour" id="etape-tour-affichage"></div>
+    <div class="header-tour" id="header-tour">Tour 1</div>
+  </div>
+
+  <!-- LAYOUT -->
+  <div class="jeu-layout">
+
+    <!-- GAUCHE : joueurs -->
+    <div class="panneau-gauche">
+      <div class="section-titre">Joueurs</div>
+      <div id="liste-joueurs"></div>
+    </div>
+
+    <!-- CENTRE : quartier + main + actions -->
+    <div class="zone-centrale">
+
+      <!-- Quartier -->
+      <div class="mon-quartier">
+        <div class="section-titre">Mon quartier</div>
+        <div class="quartier-grille" id="mon-quartier-grille"></div>
+      </div>
+
+      <!-- Main -->
+      <div class="ma-main">
+        <div class="section-titre">Ma main (<span id="nb-cartes">0</span> cartes)</div>
+        <div class="main-cartes" id="ma-main-cartes"></div>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions-panel">
+        <div class="section-titre">Actions</div>
+        <div class="actions-grille" id="actions-grille">
+          <button class="btn btn-sm" onclick="ouvrirModalConstruction()">🏗 Construire</button>
+          <button class="btn btn-sm" onclick="ouvrirModalAmelioration()">⬆ Améliorer</button>
+          <button class="btn btn-sm" onclick="activerBatiment()">⚡ Activer bâtiment</button>
+          <button class="btn btn-sm" onclick="ouvrirModalRegime()">👑 Prendre le pouvoir</button>
+          <button class="btn btn-sm btn-danger" onclick="ouvrirModalAssassinat()">🗡 Assassiner</button>
+          <button class="btn btn-sm" onclick="finAction()">✓ Fin d'action</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- DROITE : journal + chat + admin -->
+    <div class="panneau-droit">
+      <div class="onglets">
+        <div class="onglet actif" onclick="changerOnglet('journal')">Journal</div>
+        <div class="onglet" onclick="changerOnglet('chat')">Négociation</div>
+        <div class="onglet" onclick="changerOnglet('admin')">Admin</div>
+      </div>
+
+      <div class="onglet-contenu actif" id="onglet-journal">
+        <!-- Entrées journal injectées ici -->
+      </div>
+
+      <div class="onglet-contenu" id="onglet-chat">
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-zone">
+          <input type="text" id="chat-input" placeholder="Message de négociation..." onkeydown="if(event.key==='Enter') envoyerChat()">
+          <button class="btn btn-sm" onclick="envoyerChat()">→</button>
+        </div>
+      </div>
+
+      <div class="onglet-contenu" id="onglet-admin">
+        <div class="section-titre">Modifier les règles</div>
+        <div id="admin-regles"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODAL générique -->
+<div class="modal-overlay" id="modal-overlay" onclick="fermerModal(event)">
+  <div class="modal" id="modal">
+    <div class="modal-titre" id="modal-titre"></div>
+    <div class="modal-desc" id="modal-desc"></div>
+    <div id="modal-body"></div>
+    <div class="modal-actions" id="modal-actions"></div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// ÉTAT CLIENT
+// ============================================================
+let socket = null;
+let partie_id = null;
+let mon_id = null;
+let etat = null;
+let ma_main_privee = [];
+let mes_fc_privees = [];
+let carte_selectionnee = null;
+
+// ============================================================
+// CONNEXION
+// ============================================================
+function rejoindrePartie() {
+  const nom = document.getElementById('input-nom').value.trim();
+  const code = document.getElementById('input-partie').value.trim().toUpperCase() || genererCode();
+
+  if (!nom) return notif('Entrez votre nom.', 'erreur');
+
+  partie_id = code;
+  socket = io();
+
+  socket.on('connect', () => {
+    socket.emit('rejoindre_partie', { partie_id: code, nom_joueur: nom });
+  });
+
+  socket.on('vous_etes', (id) => {
+    mon_id = id;
+    document.getElementById('input-partie').value = code;
+  });
+
+  socket.on('etat_partie', (e) => {
+    etat = e;
+    rafraichir();
+  });
+
+  socket.on('debut_partie', () => {
+    document.getElementById('ecran-lobby').style.display = 'none';
+    document.getElementById('ecran-jeu').style.display = 'flex';
+    chargerMainPrivee();
+  });
+
+  socket.on('journal', (entree) => {
+    ajouterJournal(entree);
+  });
+
+  socket.on('chat', ({ joueur, message }) => {
+    ajouterChat(joueur, message);
+  });
+
+  socket.on('erreur', (msg) => {
+    notif(msg, 'erreur');
+  });
+
+  socket.on('nouveau_tour', ({ tour }) => {
+    chargerMainPrivee();
+    notif(`Tour ${tour}`, 'info');
+  });
+
+  socket.on('nouveau_regime', ({ regime, joueur_nom }) => {
+    notif(`${joueur_nom} installe : ${regime}`, 'info');
+  });
+
+  socket.on('anarchie', ({ compteur }) => {
+    notif(`Retour à l'anarchie ! Compteur : ${compteur}/10`, 'erreur');
+  });
+
+  socket.on('fin_partie', ({ message }) => {
+    ouvrirModal('Fin de partie', message, [], '');
+  });
+
+  socket.on('draft_roles', ({ roles }) => {
+    afficherDraftRoles(roles);
+  });
+
+  socket.on('complot_complet', ({ joueur_id }) => {
+    if (joueur_id === mon_id) notif('⚔️ Votre complot est complet — vous pouvez assassiner !', 'info');
+  });
+
+  document.getElementById('ecran-accueil').style.display = 'none';
+  document.getElementById('ecran-lobby').style.display = 'flex';
+  document.getElementById('lobby-code').textContent = `Code : ${code}`;
+}
+
+function demarrerPartie() {
+  socket.emit('demarrer_partie', { partie_id });
+}
+
+function genererCode() {
+  return Math.random().toString(36).substring(2, 6).toUpperCase();
+}
+
+// ============================================================
+// RAFRAÎCHISSEMENT UI
+// ============================================================
+function rafraichir() {
+  if (!etat) return;
+
+  // Lobby
+  if (etat.phase === 'attente') {
+    const liste = document.getElementById('lobby-joueurs');
+    liste.innerHTML = '';
+    etat.ordre_joueurs.forEach(jid => {
+      const j = etat.joueurs[jid];
+      const div = document.createElement('div');
+      div.className = `lobby-joueur${jid === mon_id ? ' moi' : ''}`;
+      div.textContent = j.nom + (jid === mon_id ? ' (vous)' : '');
+      liste.appendChild(div);
+    });
+    return;
+  }
+
+  // Jeu
+  afficherHeader();
+  afficherJoueurs();
+  afficherMonQuartier();
+  afficherActions();
+  afficherAdmin();
+}
+
+function afficherHeader() {
+  const r = etat.regime_actuel;
+  const rc = etat.regimes_config[r];
+  const badge = document.getElementById('regime-badge');
+  badge.textContent = `${rc?.emoji || ''} ${rc?.nom || r}`;
+  badge.style.borderColor = rc?.couleur || '#888';
+  badge.style.color = rc?.couleur || '#888';
+
+  const pct = (etat.compteur_anarchie / etat.compteur_anarchie_max) * 100;
+  document.getElementById('jauge-anarchie').style.width = `${pct}%`;
+  document.getElementById('compteur-anarchie-texte').textContent = `${etat.compteur_anarchie}/${etat.compteur_anarchie_max}`;
+  document.getElementById('header-tour').textContent = `Tour ${etat.tour}`;
+
+  // Étapes
+  const etapes = ['revenus', 'pioche', 'negociation', 'action', 'verification'];
+  const etape_html = etapes.map(e =>
+    `<div class="etape${e === etat.etape_tour ? ' actuelle' : ''}">${e}</div>`
+  ).join('');
+  document.getElementById('etape-tour-affichage').innerHTML = etape_html;
+}
+
+function afficherJoueurs() {
+  const container = document.getElementById('liste-joueurs');
+  container.innerHTML = '';
+
+  etat.ordre_joueurs.forEach(jid => {
+    const j = etat.joueurs[jid];
+    const card = document.createElement('div');
+    card.className = `joueur-card${jid === mon_id ? ' moi' : ''}${jid === etat.joueur_au_pouvoir ? ' au-pouvoir' : ''}${j.emprisonne ? ' emprisonne' : ''}${j.mort ? ' mort' : ''}`;
+
+    const role_config = j.role_config;
+    const bat_html = j.quartier.map(b => {
+      const cfg = etat.batiments_config[b.type];
+      return `<div class="batiment-mini" style="background:${cfg?.couleur || '#555'}" title="${cfg?.nom || b.type} ${'★'.repeat(b.niveau)}">${cfg?.emoji || '?'}</div>`;
+    }).join('');
+
+    card.innerHTML = `
+      <div class="joueur-nom">
+        ${j.mort ? '☠️' : j.emprisonne ? '⛓' : jid === etat.joueur_au_pouvoir ? '👑' : ''}
+        ${j.nom}
+        ${jid === mon_id ? '<span style="color:var(--texte-faible);font-size:10px">(vous)</span>' : ''}
+      </div>
+      ${role_config ? `<div class="joueur-role">${role_config.emoji || ''} ${role_config.nom}</div>` : '<div class="joueur-role">Sans rôle</div>'}
+      <div class="ressources">
+        <span class="ressource-or">⚜ ${j.or} or</span>
+        <span class="ressource-inf">◈ ${j.influence} inf</span>
+      </div>
+      <div class="batiments-mini">${bat_html}</div>
+      ${j.nb_face_cachee > 0 ? `<div class="badge-fc">▪ ${j.nb_face_cachee} face(s) cachée(s)</div>` : ''}
+      ${j.emprisonne ? `<div style="color:var(--rouge);font-size:10px">Emprisonné — ${j.tours_prison} tours restants</div>` : ''}
+    `;
+
+    card.onclick = () => afficherJoueurDetail(jid);
+    container.appendChild(card);
+  });
+}
+
+function afficherMonQuartier() {
+  const grille = document.getElementById('mon-quartier-grille');
+  grille.innerHTML = '';
+  const moi = etat.joueurs[mon_id];
+  if (!moi) return;
+
+  for (let i = 0; i < 6; i++) {
+    const bat = moi.quartier[i];
+    const div = document.createElement('div');
+
+    if (bat) {
+      const cfg = etat.batiments_config[bat.type];
+      div.className = 'emplacement occupe';
+      div.style.borderColor = cfg?.couleur || '#555';
+      div.innerHTML = `
+        ${bat.automatise || bat.auto_production ? '<div class="bat-auto">⚡</div>' : ''}
+        <div class="bat-emoji">${cfg?.emoji || '?'}</div>
+        <div class="bat-nom">${cfg?.nom || bat.type}</div>
+        <div class="bat-niveau">${'★'.repeat(bat.niveau)}${'☆'.repeat((cfg?.niveaux_max || 3) - bat.niveau)}</div>
+      `;
+      div.onclick = () => afficherBatimentActions(bat, i);
+    } else {
+      div.className = 'emplacement vide';
+      div.textContent = '+';
+      div.onclick = () => ouvrirModalConstruction();
+    }
+
+    grille.appendChild(div);
+  }
+}
+
+function afficherActions() {
+  // Mettre à jour les boutons selon l'état
+  const moi = etat.joueurs[mon_id];
+  if (!moi) return;
+
+  // Fragments de complot
+  const seuil_fragment = moi.role === 'espion' ? 1 : 2;
+  const btn_assassinat = document.querySelector('[onclick="ouvrirModalAssassinat()"]');
+  if (btn_assassinat) {
+    btn_assassinat.textContent = `🗡 Assassiner (${moi.fragments_complot}/${seuil_fragment})`;
+    btn_assassinat.disabled = moi.fragments_complot < seuil_fragment;
+    btn_assassinat.style.opacity = moi.fragments_complot < seuil_fragment ? '0.4' : '1';
+  }
+}
+
+function afficherAdmin() {
+  const moi = etat.joueurs[mon_id];
+  if (!moi) return;
+
+  const container = document.getElementById('admin-regles');
+  const regles_editables = [
+    { cle: 'compteur_anarchie_max', label: 'Compteur anarchie max', min: 1, max: 20 },
+    { cle: 'tours_anarchie_min', label: 'Tours anarchie minimum', min: 1, max: 10 },
+    { cle: 'cout_revolution_bourgeoise', label: 'Coût Révolution bourgeoise', min: 1, max: 20 },
+    { cle: 'seuil_vote_oligarchie', label: 'Seuil vote Oligarchie (or)', min: 1, max: 30 },
+    { cle: 'duree_emprisonnement', label: 'Durée emprisonnement (tours)', min: 1, max: 10 },
+    { cle: 'seuil_prison_1', label: 'Seuil évasion prison ★', min: 1, max: 30 },
+    { cle: 'seuil_prison_2', label: 'Seuil évasion prison ★★', min: 1, max: 50 },
+    { cle: 'fragments_assassinat', label: 'Fragments assassinat', min: 1, max: 5 },
+    { cle: 'impot_joueur_pouvoir', label: 'Impôt joueur au pouvoir (or/tour)', min: 0, max: 5 },
+  ];
+
+  container.innerHTML = regles_editables.map(r => `
+    <div class="admin-regle">
+      <label>${r.label}</label>
+      <div class="admin-regle-controls">
+        <input type="number" value="${etat.regles[r.cle] || 0}" min="${r.min}" max="${r.max}"
+          onchange="modifierRegle('${r.cle}', this.value)">
+        <span style="font-size:11px;color:var(--texte-faible)">${etat.regles[r.cle]}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============================================================
+// MODALS
+// ============================================================
+function ouvrirModal(titre, desc, actions, body_html) {
+  document.getElementById('modal-titre').textContent = titre;
+  document.getElementById('modal-desc').textContent = desc;
+  document.getElementById('modal-body').innerHTML = body_html || '';
+  const acts = document.getElementById('modal-actions');
+  acts.innerHTML = '';
+  actions.forEach(a => {
+    const btn = document.createElement('button');
+    btn.className = `btn btn-sm${a.danger ? ' btn-danger' : ''}`;
+    btn.textContent = a.label;
+    btn.onclick = a.action;
+    acts.appendChild(btn);
+  });
+  const fermer_btn = document.createElement('button');
+  fermer_btn.className = 'btn btn-sm';
+  fermer_btn.textContent = 'Fermer';
+  fermer_btn.onclick = () => document.getElementById('modal-overlay').classList.remove('visible');
+  acts.appendChild(fermer_btn);
+  document.getElementById('modal-overlay').classList.add('visible');
+}
+
+function fermerModal(e) {
+  if (e.target === document.getElementById('modal-overlay')) {
+    document.getElementById('modal-overlay').classList.remove('visible');
+  }
+}
+
+function ouvrirModalConstruction() {
+  const moi = etat.joueurs[mon_id];
+  if (!moi) return;
+  if (moi.quartier.length >= 6) return notif('Quartier plein.', 'erreur');
+
+  const bats = Object.entries(etat.batiments_config);
+  const body = `<div class="batiments-choix">${bats.map(([type, cfg]) => `
+    <div class="batiment-option" onclick="construire('${type}')">
+      <div class="bat-emoji-lg">${cfg.emoji}</div>
+      <div style="font-weight:bold">${cfg.nom}</div>
+      <div style="font-size:11px;color:var(--or)">Coût : ${cfg.cout_construction} or</div>
+      <div style="font-size:10px;color:var(--texte-faible)">Max ★×${cfg.niveaux_max}</div>
+    </div>
+  `).join('')}</div>`;
+
+  ouvrirModal('Construire un bâtiment', `Or disponible : ${moi.or}`, [], body);
+}
+
+function construire(type_batiment) {
+  socket.emit('action', { partie_id, type_action: 'construire', donnees: { type_batiment } });
+  document.getElementById('modal-overlay').classList.remove('visible');
+}
+
+function ouvrirModalAmelioration() {
+  const moi = etat.joueurs[mon_id];
+  if (!moi || moi.quartier.length === 0) return notif('Aucun bâtiment à améliorer.', 'erreur');
+
+  const body = `<div class="batiments-choix">${moi.quartier.map(bat => {
+    const cfg = etat.batiments_config[bat.type];
+    if (!cfg) return '';
+    if (bat.niveau >= cfg.niveaux_max) return `<div class="batiment-option" style="opacity:0.4">${cfg.emoji} ${cfg.nom}<br><small>Niveau maximum</small></div>`;
+    const cout = cfg.amelioration[bat.niveau - 1];
+    return `<div class="batiment-option" onclick="ameliorer('${bat.uid}')">
+      <div class="bat-emoji-lg">${cfg.emoji}</div>
+      <div><strong>${cfg.nom}</strong> ${'★'.repeat(bat.niveau)} → ${'★'.repeat(bat.niveau + 1)}</div>
+      <div style="font-size:11px;color:var(--or)">
+        ${cout.or ? `${cout.or} or` : ''} ${cout.influence ? `+ ${cout.influence} influence` : ''}
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+
+  ouvrirModal('Améliorer un bâtiment', `Or : ${moi.or} | Influence : ${moi.influence}`, [], body);
+}
+
+function ameliorer(bat_uid) {
+  socket.emit('action', { partie_id, type_action: 'ameliorer', donnees: { bat_uid } });
+  document.getElementById('modal-overlay').classList.remove('visible');
+}
+
+function activerBatiment() {
+  const moi = etat.joueurs[mon_id];
+  if (!moi || moi.quartier.length === 0) return notif('Aucun bâtiment.', 'erreur');
+
+  const bats_non_auto = moi.quartier.filter(b => !b.auto_production && !b.automatise);
+  if (bats_non_auto.length === 0) return notif('Tous vos bâtiments sont automatisés.', 'erreur');
+
+  const body = `<div class="batiments-choix">${bats_non_auto.map(bat => {
+    const cfg = etat.batiments_config[bat.type];
+    const prod = cfg?.production[bat.niveau - 1];
+    return `<div class="batiment-option" onclick="activerBat('${bat.uid}')">
+      <div class="bat-emoji-lg">${cfg?.emoji}</div>
+      <div><strong>${cfg?.nom}</strong> ${'★'.repeat(bat.niveau)}</div>
+      <div style="font-size:11px;color:var(--vert)">
+        ${prod?.or ? `+${prod.or} or` : ''} ${prod?.influence ? `+${prod.influence} influence` : ''}
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+
+  ouvrirModal('Activer un bâtiment', 'Choisissez le bâtiment à activer ce tour.', [], body);
+}
+
+function activerBat(bat_uid) {
+  socket.emit('action', { partie_id, type_action: 'activer', donnees: { bat_uid } });
+  document.getElementById('modal-overlay').classList.remove('visible');
+}
+
+function ouvrirModalRegime() {
+  const moi = etat.joueurs[mon_id];
+  if (!moi) return;
+
+  const carte_pp = ma_main_privee.find(c => c.effet === 'prise_de_pouvoir');
+  if (!carte_pp) return notif('Vous n\'avez pas de carte Prise de pouvoir.', 'erreur');
+
+  const regimes = Object.entries(etat.regimes_config).filter(([r]) => r !== 'anarchie');
+  const body = `<div class="regimes-choix">${regimes.map(([regime, cfg]) => {
+    const peut = verifierPrerequisClient(moi, regime, cfg);
+    return `<div class="regime-option${peut ? '' : '" style="opacity:0.4'}" 
+      style="background:${cfg.couleur}22;border-color:${cfg.couleur}"
+      onclick="${peut ? `choisirRegime('${regime}')` : 'alert(\"Prérequis non remplis\")'}">
+      <div class="regime-emoji">${cfg.emoji}</div>
+      <div class="regime-nom">${cfg.nom}</div>
+      <div class="regime-pre">${peut ? '✓ Prérequis remplis' : '✗ Prérequis manquants'}</div>
+    </div>`;
+  }).join('')}</div>`;
+
+  ouvrirModal('Prise de pouvoir', 'Choisissez votre régime. Vérifiez les prérequis.', [], body);
+}
+
+function verifierPrerequisClient(joueur, regime, cfg) {
+  const prereq = cfg.prerequis || {};
+  for (const [type, valeur] of Object.entries(prereq)) {
+    if (type === 'or_min') {
+      if (joueur.or < valeur) return false;
+    } else if (type.endsWith('_niveau')) {
+      const bat_type = type.replace('_niveau', '');
+      const bat = joueur.quartier.find(b => b.type === bat_type);
+      if (!bat || bat.niveau < valeur) return false;
+    } else {
+      const count = joueur.quartier.filter(b => b.type === type).length;
+      if (count < valeur) return false;
+    }
+  }
+  return true;
+}
+
+function choisirRegime(regime) {
+  socket.emit('action', { partie_id, type_action: 'prise_de_pouvoir', donnees: { regime } });
+  document.getElementById('modal-overlay').classList.remove('visible');
+}
+
+function ouvrirModalAssassinat() {
+  const moi = etat.joueurs[mon_id];
+  if (!moi) return;
+  const seuil = moi.role === 'espion' ? 1 : 2;
+  if (moi.fragments_complot < seuil) return notif(`Il faut ${seuil} fragment(s). Vous en avez ${moi.fragments_complot}.`, 'erreur');
+
+  const cibles = etat.ordre_joueurs
+    .filter(jid => jid !== mon_id && !etat.joueurs[jid]?.mort)
+    .map(jid => etat.joueurs[jid]);
+
+  const actions = cibles.map(c => ({
+    label: `Assassiner ${c.nom}`,
+    danger: true,
+    action: () => {
+      socket.emit('action', { partie_id, type_action: 'assassiner', donnees: { cible_id: c.id } });
+      document.getElementById('modal-overlay').classList.remove('visible');
+    }
+  }));
+
+  ouvrirModal('Assassinat', 'Choisissez votre cible. Action irréversible.', actions, '');
+}
+
+function afficherJoueurDetail(jid) {
+  const j = etat.joueurs[jid];
+  if (!j) return;
+
+  const bat_html = j.quartier.map(b => {
+    const cfg = etat.batiments_config[b.type];
+    return `${cfg?.emoji} ${cfg?.nom} ${'★'.repeat(b.niveau)}${b.automatise ? ' ⚡' : ''}`;
+  }).join('<br>');
+
+  const body = `
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div><span class="texte-or">Or :</span> ${j.or}</div>
+      <div><span class="texte-inf">Influence :</span> ${j.influence}</div>
+      <div>Bâtiments :<br>${bat_html || 'Aucun'}</div>
+      <div>Cartes en main : ${j.nb_cartes_main}</div>
+      <div>Cartes face cachée : ${j.nb_face_cachee}</div>
+      ${j.emprisonne ? `<div class="texte-rouge">Emprisonné — ${j.tours_prison} tours</div>` : ''}
+      ${j.role_config ? `<div>${j.role_config.emoji} ${j.role_config.nom}</div>` : ''}
+    </div>
+  `;
+
+  const actions_j = [];
+  if (jid !== mon_id && !j.mort) {
+    actions_j.push({ label: '🗡 Saboter un bâtiment', danger: true, action: () => choisirSabotage(jid) });
+    actions_j.push({ label: '💰 Voler', danger: true, action: () => { socket.emit('action', { partie_id, type_action: 'jouer_carte', donnees: { carte_uid: 'vol_direct', cible_id: jid } }); document.getElementById('modal-overlay').classList.remove('visible'); } });
+  }
+
+  ouvrirModal(j.nom, j.role_config ? `${j.role_config.emoji} ${j.role_config.nom} — ${j.role_config.description}` : 'Sans rôle', actions_j, body);
+}
+
+function choisirSabotage(cible_id) {
+  const cible = etat.joueurs[cible_id];
+  if (!cible || cible.quartier.length === 0) return notif('Aucun bâtiment à saboter.', 'erreur');
+
+  const body = `<div class="batiments-choix">${cible.quartier.map(bat => {
+    const cfg = etat.batiments_config[bat.type];
+    return `<div class="batiment-option" onclick="saboter('${cible_id}','${bat.uid}')">
+      ${cfg?.emoji} ${cfg?.nom} ${'★'.repeat(bat.niveau)}
+    </div>`;
+  }).join('')}</div>`;
+
+  document.getElementById('modal-body').innerHTML = body;
+  document.getElementById('modal-titre').textContent = `Saboter ${cible.nom}`;
+  document.getElementById('modal-desc').textContent = 'Coût : 1 or + influence supérieure à la cible.';
+}
+
+function saboter(cible_id, bat_uid) {
+  socket.emit('action', { partie_id, type_action: 'sabotage', donnees: { cible_id, bat_uid } });
+  document.getElementById('modal-overlay').classList.remove('visible');
+}
+
+function afficherBatimentActions(bat, idx) {
+  const cfg = etat.batiments_config[bat.type];
+  const prod = cfg?.production[bat.niveau - 1];
+
+  const actions = [
+    { label: '⚡ Activer', action: () => { activerBat(bat.uid); document.getElementById('modal-overlay').classList.remove('visible'); } },
+  ];
+
+  if (bat.niveau < cfg?.niveaux_max) {
+    actions.push({ label: '⬆ Améliorer', action: () => ameliorer(bat.uid) });
+  }
+
+  actions.push({ label: '💥 Détruire', danger: true, action: () => {
+    socket.emit('action', { partie_id, type_action: 'sabotage', donnees: { cible_id: mon_id, bat_uid: bat.uid } });
+    document.getElementById('modal-overlay').classList.remove('visible');
+  }});
+
+  ouvrirModal(
+    `${cfg?.emoji} ${cfg?.nom} ${'★'.repeat(bat.niveau)}`,
+    `Production : ${prod?.or ? `+${prod.or} or` : ''} ${prod?.influence ? `+${prod.influence} influence` : ''}${bat.automatise || bat.auto_production ? ' (automatique)' : ''}`,
+    actions, ''
+  );
+}
+
+// ============================================================
+// CARTES
+// ============================================================
+async function chargerMainPrivee() {
+  if (!mon_id || !partie_id) return;
+  try {
+    const r = await fetch(`/api/joueur/${partie_id}/${mon_id}`);
+    const d = await r.json();
+    ma_main_privee = d.main || [];
+    mes_fc_privees = d.face_cachee || [];
+    afficherMainPrivee();
+  } catch(e) { console.error(e); }
+}
+
+function afficherMainPrivee() {
+  const container = document.getElementById('ma-main-cartes');
+  container.innerHTML = '';
+  document.getElementById('nb-cartes').textContent = ma_main_privee.length;
+
+  ma_main_privee.forEach(carte => {
+    const div = document.createElement('div');
+    div.className = `carte ${carte.type || ''}${carte === carte_selectionnee ? ' selectionne' : ''}`;
+    div.innerHTML = `
+      <div class="carte-type">${traductionType(carte.type)}</div>
+      <div class="carte-nom">${carte.nom}</div>
+      <div class="carte-desc">${carte.description}</div>
+    `;
+    div.onclick = () => clicCarte(carte, div);
+    container.appendChild(div);
+  });
+}
+
+function clicCarte(carte, el) {
+  // Désélectionner si déjà sélectionné
+  if (carte_selectionnee === carte) {
+    carte_selectionnee = null;
+    afficherMainPrivee();
+    return;
+  }
+
+  carte_selectionnee = carte;
+  afficherMainPrivee();
+
+  // Selon le type de carte, ouvrir modal approprié
+  if (carte.effet === 'fragment_complot') {
+    socket.emit('action', { partie_id, type_action: 'poser_face_cachee', donnees: { carte_uid: carte.uid } });
+    carte_selectionnee = null;
+    chargerMainPrivee();
+  } else if (carte.effet === 'prise_de_pouvoir') {
+    ouvrirModalRegime();
+  } else if (carte.effet === 'revolte_populaire' || carte.effet === 'revolution_bourgeoise' || carte.effet === 'coup_etat') {
+    const actions = [{ label: 'Jouer cette carte', danger: true, action: () => {
+      socket.emit('action', { partie_id, type_action: 'jouer_carte', donnees: { carte_uid: carte.uid } });
+      document.getElementById('modal-overlay').classList.remove('visible');
+      carte_selectionnee = null;
+      chargerMainPrivee();
+    }}];
+    ouvrirModal(carte.nom, carte.description, actions, '');
+  } else if (carte.effet === 'vol' || carte.effet === 'baisse_influence' || carte.effet === 'scandale') {
+    // Choisir une cible
+    const cibles = etat.ordre_joueurs.filter(jid => jid !== mon_id && !etat.joueurs[jid]?.mort);
+    const actions = cibles.map(jid => ({
+      label: `→ ${etat.joueurs[jid].nom}`,
+      action: () => {
+        socket.emit('action', { partie_id, type_action: 'jouer_carte', donnees: { carte_uid: carte.uid, cible_id: jid } });
+        document.getElementById('modal-overlay').classList.remove('visible');
+        carte_selectionnee = null;
+        chargerMainPrivee();
+      }
+    }));
+    ouvrirModal(carte.nom, carte.description + '\nChoisissez une cible :', actions, '');
+  } else if (carte.effet === 'coup_de_chance') {
+    const actions = [
+      { label: '+5 or', action: () => {
+        socket.emit('action', { partie_id, type_action: 'jouer_carte', donnees: { carte_uid: carte.uid, choix: 'or' } });
+        document.getElementById('modal-overlay').classList.remove('visible');
+        chargerMainPrivee();
+      }},
+      { label: '+5 influence', action: () => {
+        socket.emit('action', { partie_id, type_action: 'jouer_carte', donnees: { carte_uid: carte.uid, choix: 'influence' } });
+        document.getElementById('modal-overlay').classList.remove('visible');
+        chargerMainPrivee();
+      }}
+    ];
+    ouvrirModal(carte.nom, carte.description, actions, '');
+  } else {
+    const actions = [{ label: 'Jouer', action: () => {
+      socket.emit('action', { partie_id, type_action: 'jouer_carte', donnees: { carte_uid: carte.uid } });
+      document.getElementById('modal-overlay').classList.remove('visible');
+      carte_selectionnee = null;
+      chargerMainPrivee();
+    }}, { label: 'Poser face cachée', action: () => {
+      socket.emit('action', { partie_id, type_action: 'poser_face_cachee', donnees: { carte_uid: carte.uid } });
+      document.getElementById('modal-overlay').classList.remove('visible');
+      carte_selectionnee = null;
+      chargerMainPrivee();
+    }}];
+    ouvrirModal(carte.nom, carte.description, actions, '');
+  }
+}
+
+function traductionType(type) {
+  const t = {
+    opportunite: 'Opportunité',
+    mecanique: 'Mécanique',
+    evenement: 'Événement',
+    renversement_destructif: 'Renversement',
+    renversement_constructif: 'Révolution',
+    prise_de_pouvoir: 'Prise de pouvoir',
+    scandale: 'Scandale',
+    reaction: 'Réaction',
+  };
+  return t[type] || type;
+}
+
+// ============================================================
+// DRAFT RÔLES
+// ============================================================
+function afficherDraftRoles(roles) {
+  const moi = etat.joueurs[mon_id];
+  if (!moi || moi.role) return;
+
+  const roles_config = etat.roles_config;
+  const body = `<div class="batiments-choix">${roles.map(r => {
+    const cfg = roles_config[r];
+    return `<div class="batiment-option" onclick="choisirRole('${r}')">
+      <div class="bat-emoji-lg">${cfg?.emoji || '?'}</div>
+      <div><strong>${cfg?.nom || r}</strong></div>
+      <div style="font-size:11px;color:var(--texte-faible)">${cfg?.description || ''}</div>
+    </div>`;
+  }).join('')}</div>`;
+
+  ouvrirModal('Choisir votre rôle', 'Le draft commence ! Choisissez votre rôle parmi ceux disponibles.', [], body);
+}
+
+function choisirRole(role) {
+  socket.emit('action', { partie_id, type_action: 'choisir_role', donnees: { role } });
+  document.getElementById('modal-overlay').classList.remove('visible');
+}
+
+// ============================================================
+// ACTIONS DIVERSES
+// ============================================================
+function finAction() {
+  socket.emit('action', { partie_id, type_action: 'fin_action', donnees: {} });
+  notif('Action terminée.', 'info');
+}
+
+function modifierRegle(cle, valeur) {
+  socket.emit('modifier_regle', { partie_id, cle, valeur: Number(valeur) });
+  notif(`Règle modifiée : ${cle} = ${valeur}`, 'succes');
+}
+
+// ============================================================
+// CHAT
+// ============================================================
+function envoyerChat() {
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  socket.emit('message_chat', { partie_id, message: msg });
+  input.value = '';
+}
+
+function ajouterChat(joueur, message) {
+  const container = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'chat-msg';
+  div.innerHTML = `<span class="chat-nom">${joueur} :</span> ${message}`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+// ============================================================
+// JOURNAL
+// ============================================================
+function ajouterJournal(entree) {
+  const container = document.getElementById('onglet-journal');
+  const div = document.createElement('div');
+  div.className = `journal-entree ${entree.type || 'info'}`;
+  div.innerHTML = `${entree.message}<div class="journal-tour">T${entree.tour}</div>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+// ============================================================
+// ONGLETS
+// ============================================================
+function changerOnglet(id) {
+  document.querySelectorAll('.onglet').forEach((o, i) => {
+    const ids = ['journal', 'chat', 'admin'];
+    o.classList.toggle('actif', ids[i] === id);
+  });
+  document.querySelectorAll('.onglet-contenu').forEach(c => c.classList.remove('actif'));
+  document.getElementById(`onglet-${id}`).classList.add('actif');
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+function notif(msg, type = 'info') {
+  const zone = document.getElementById('notif-zone');
+  const div = document.createElement('div');
+  div.className = `notif ${type}`;
+  div.textContent = msg;
+  zone.appendChild(div);
+  setTimeout(() => div.remove(), 4000);
+}
+</script>
+</body>
+</html>
