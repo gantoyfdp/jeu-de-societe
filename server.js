@@ -444,6 +444,13 @@ function verifierPrerequisRegime(joueur, regime) {
   return true;
 }
 
+function notifierJoueur(partie, joueur_id, message, type = 'alerte') {
+  io.to(partie.id).emit('journal', { tour: partie.tour, message, type, ts: Date.now() });
+  // Notif spéciale pour le joueur ciblé
+  const socket_cible = [...io.sockets.sockets.values()].find(s => s.id === joueur_id);
+  if (socket_cible) socket_cible.emit('evenement_subi', { message, type });
+}
+
 function journaliser(partie, message, type = 'info') {
   const entree = { tour: partie.tour, message, type, ts: Date.now() };
   partie.journal.push(entree);
@@ -546,6 +553,14 @@ io.on('connection', (socket) => {
   });
 
   // Admin — modifier les règles en direct
+  socket.on('reset_partie', ({ partie_id }) => {
+    // Réinitialiser complètement la partie
+    parties[partie_id] = creerPartie(partie_id);
+    journaliser(parties[partie_id], 'Partie réinitialisée.', 'systeme');
+    io.to(partie_id).emit('etat_partie', serialiserPartie(parties[partie_id]));
+    io.to(partie_id).emit('partie_reset');
+  });
+
   socket.on('modifier_regle', ({ partie_id, cle, valeur }) => {
     const partie = parties[partie_id];
     if (!partie) return;
@@ -700,6 +715,7 @@ function traiterAction(partie, joueur, joueur_id, type_action, donnees, socket) 
       joueur.fragments_complot = 0;
       appliquerMort(partie, cible, cible_id, joueur.nom);
       journaliser(partie, `☠️ ${joueur.nom} assassine ${cible.nom} !`, 'combat');
+    notifierJoueur(partie, cible_id, `☠️ ${joueur.nom} vous a assassiné !`);
       break;
     }
 
@@ -752,6 +768,7 @@ function traiterAction(partie, joueur, joueur_id, type_action, donnees, socket) 
         if (!bat) return socket.emit('erreur', 'Bâtiment cible introuvable.');
         bat.niveau = Math.max(1, bat.niveau - 1);
         journaliser(partie, `${joueur.nom} sabote ${BATIMENTS[bat.type].nom} de ${cible.nom}.`, 'combat');
+        notifierJoueur(partie, cible_id, `🔴 ${joueur.nom} a saboté votre ${BATIMENTS[bat.type]?.nom} !`);
       }
       break;
     }
@@ -836,6 +853,7 @@ function appliquerEffetCarte(partie, joueur, joueur_id, carte, cible_id, choix, 
       cible.or -= vol_montant;
       joueur.or += vol_montant;
       journaliser(partie, `${joueur.nom} vole ${vol_montant} or à ${cible.nom}.`);
+      notifierJoueur(partie, cible_id, `🔴 ${joueur.nom} vous a volé ${vol_montant} or !`);
       break;
 
     case 'amelioration_gratuite': {
@@ -852,6 +870,7 @@ function appliquerEffetCarte(partie, joueur, joueur_id, carte, cible_id, choix, 
       if (!cible) return socket.emit('erreur', 'Cible requise.');
       cible.influence = Math.max(0, cible.influence - (carte.valeur || 3));
       journaliser(partie, `${joueur.nom} baisse l\'influence de ${cible.nom} de ${carte.valeur || 3}.`);
+      notifierJoueur(partie, cible_id, `🔴 ${joueur.nom} a baissé votre influence de ${carte.valeur || 3} !`);
       break;
 
     case 'coup_de_chance':
@@ -868,6 +887,7 @@ function appliquerEffetCarte(partie, joueur, joueur_id, carte, cible_id, choix, 
       if (!cible) return socket.emit('erreur', 'Cible requise.');
       cible.influence = Math.max(0, cible.influence - 3);
       journaliser(partie, `📰 Scandale ! ${cible.nom} perd 3 influence.`, 'evenement');
+      notifierJoueur(partie, cible_id, `📰 Scandale ! Vous perdez 3 influence.`);
       break;
 
     case 'revolte_populaire':
