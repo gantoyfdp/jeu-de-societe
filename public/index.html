@@ -644,6 +644,7 @@
         <div class="section-titre">Actions — <span id="statut-action" style="color:var(--texte-faible)">En attente</span></div>
         <div id="indicateur-tour" style="font-size:11px;color:var(--texte-faible);padding:4px 0;margin-bottom:6px"></div>
         <div class="actions-grille" id="actions-grille">
+          <button class="btn btn-sm" onclick="ouvrirModalEchange()">🤝 Donner ressource</button>
           <button class="btn btn-sm" id="btn-construire" onclick="ouvrirModalConstruction()">🏗 Construire</button>
           <button class="btn btn-sm" id="btn-ameliorer" onclick="ouvrirModalAmelioration()">⬆ Améliorer</button>
           <button class="btn btn-sm" id="btn-activer" onclick="activerBatiment()">⚡ Activer bâtiment</button>
@@ -1383,6 +1384,40 @@ function choisirRole(role) {
 // ============================================================
 // ACTIONS DIVERSES
 // ============================================================
+function ouvrirModalEchange() {
+  const cibles = etat.ordre_joueurs.filter(jid => jid !== mon_id && !etat.joueurs[jid]?.mort);
+  const actions = cibles.map(jid => ({
+    label: etat.joueurs[jid].nom,
+    action: () => choisirEchange(jid)
+  }));
+  ouvrirModal('Donner des ressources', 'À qui voulez-vous donner des ressources ?', actions, '');
+}
+
+function choisirEchange(cible_id) {
+  document.getElementById('modal-overlay').classList.remove('visible');
+  const body = `
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:8px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="color:var(--or);width:80px">Or :</span>
+        <input type="number" id="don-or" min="0" value="0" style="width:80px;background:var(--gris-moyen);border:1px solid var(--bordure);color:var(--texte);padding:6px">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="color:var(--influence);width:80px">Influence :</span>
+        <input type="number" id="don-inf" min="0" value="0" style="width:80px;background:var(--gris-moyen);border:1px solid var(--bordure);color:var(--texte);padding:6px">
+      </div>
+    </div>
+  `;
+  ouvrirModal('Donner à ' + etat.joueurs[cible_id].nom, 'Choisissez les montants.', [
+    { label: 'Confirmer', action: () => {
+      const or = parseInt(document.getElementById('don-or').value) || 0;
+      const inf = parseInt(document.getElementById('don-inf').value) || 0;
+      if (or > 0) socket.emit('action', { partie_id, type_action: 'donner_ressource', donnees: { cible_id, type_ressource: 'or', montant: or } });
+      if (inf > 0) socket.emit('action', { partie_id, type_action: 'donner_ressource', donnees: { cible_id, type_ressource: 'influence', montant: inf } });
+      document.getElementById('modal-overlay').classList.remove('visible');
+    }}
+  ], body);
+}
+
 function finAction() {
   socket.emit('action', { partie_id, type_action: 'fin_action', donnees: {} });
   notif('Action terminée.', 'info');
