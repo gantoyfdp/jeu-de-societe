@@ -773,17 +773,42 @@ function traiterAction(partie, joueur, joueur_id, type_action, donnees, socket) 
       break;
     }
 
+    case 'donner_ressource': {
+      // Échange libre pendant la négociation
+      const { cible_id, type_ressource, montant } = donnees;
+      const cible_don = partie.joueurs[cible_id];
+      if (!cible_don) return socket.emit('erreur', 'Cible introuvable.');
+      const m = parseInt(montant) || 0;
+      if (m <= 0) return socket.emit('erreur', 'Montant invalide.');
+      if (type_ressource === 'or') {
+        if (joueur.or < m) return socket.emit('erreur', 'Or insuffisant.');
+        joueur.or -= m;
+        cible_don.or += m;
+      } else if (type_ressource === 'influence') {
+        if (joueur.influence < m) return socket.emit('erreur', 'Influence insuffisante.');
+        joueur.influence -= m;
+        cible_don.influence += m;
+      }
+      journaliser(partie, `${joueur.nom} donne ${m} ${type_ressource} à ${cible_don.nom}.`);
+      // Ne consomme PAS l'action principale
+      partie.actions_tour[joueur_id] = partie.actions_tour[joueur_id] || false;
+      break;
+    }
+
     case 'fin_action':
-      partie.actions_tour[joueur_id] = 'fin';
-      const joueurs_devant_jouer = partie.ordre_joueurs.filter(jid => {
+      // Marquer ce joueur comme prêt
+      partie.actions_tour[joueur_id] = partie.actions_tour[joueur_id] || 'fin';
+      // Joueurs qui doivent encore confirmer leur fin de tour
+      const joueurs_actifs_ft = partie.ordre_joueurs.filter(jid => {
         const j = partie.joueurs[jid];
         return j && !j.mort && !j.emprisonne;
       });
-      const tous_joue = joueurs_devant_jouer.every(jid => partie.actions_tour[jid]);
-      const nb_prets = joueurs_devant_jouer.filter(jid => partie.actions_tour[jid]).length;
-      journaliser(partie, `${joueur.nom} a terminé (${nb_prets}/${joueurs_devant_jouer.length} prêts).`);
-      if (tous_joue) {
-        journaliser(partie, `Tous les joueurs ont joué — tour suivant.`, 'systeme');
+      const nb_prets_ft = joueurs_actifs_ft.filter(jid => partie.actions_tour[jid]).length;
+      const tous_prets = joueurs_actifs_ft.every(jid => partie.actions_tour[jid]);
+      journaliser(partie, `${joueur.nom} est prêt (${nb_prets_ft}/${joueurs_actifs_ft.length}).`);
+      io.to(partie.id).emit('etat_partie', serialiserPartie(partie));
+      if (tous_prets) {
+        journaliser(partie, `Tous prêts — tour ${partie.tour + 1} !`, 'systeme');
         avancerTour(partie);
       }
       break;
