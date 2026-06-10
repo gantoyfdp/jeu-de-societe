@@ -591,12 +591,6 @@ function traiterAction(partie, joueur, joueur_id, type_action, donnees, socket) 
       if (joueur.quartier.length >= partie.regles.emplacements_quartier) return socket.emit('erreur', 'Quartier plein — détruire un bâtiment d\'abord.');
       if (joueur.or < bat_config.cout_construction) return socket.emit('erreur', 'Or insuffisant.');
 
-      // En anarchie, usines et prisons ne fonctionnent pas
-      if (partie.regime_actuel === 'anarchie' && (type_batiment === 'usine' || type_batiment === 'prison')) {
-        socket.emit('erreur', 'En anarchie, les usines et prisons ne peuvent pas être construites.');
-        return;
-      }
-
       joueur.or -= bat_config.cout_construction;
       joueur.quartier.push({ type: type_batiment, niveau: 1, automatise: false, uid: `${joueur_id}_${type_batiment}_${Date.now()}` });
       journaliser(partie, `${joueur.nom} construit ${bat_config.nom} ★.`);
@@ -812,6 +806,19 @@ function traiterAction(partie, joueur, joueur_id, type_action, donnees, socket) 
         avancerTour(partie);
       }
       break;
+  }
+
+  // Après chaque action principale, vérifier si tout le monde a joué
+  if (!actions_libres.includes(type_action) && type_action !== 'fin_action') {
+    const joueurs_actifs_check = partie.ordre_joueurs.filter(jid => {
+      const j = partie.joueurs[jid];
+      return j && !j.mort && !j.emprisonne;
+    });
+    const tous_ont_joue = joueurs_actifs_check.every(jid => partie.actions_tour[jid]);
+    if (tous_ont_joue) {
+      journaliser(partie, `Tous les joueurs ont joué — tour ${partie.tour + 1} !`, 'systeme');
+      avancerTour(partie);
+    }
   }
 }
 
