@@ -568,9 +568,20 @@ io.on('connection', (socket) => {
 // ============================================================
 
 function traiterAction(partie, joueur, joueur_id, type_action, donnees, socket) {
-  if (joueur.emprisonne && type_action !== 'negocier' && type_action !== 'evasion') {
+  const actions_libres = ['negocier', 'evasion', 'fin_action', 'choisir_role'];
+
+  if (joueur.emprisonne && !actions_libres.includes(type_action)) {
     socket.emit('erreur', 'Vous êtes emprisonné — action impossible.');
     return;
+  }
+
+  // Verrou : une seule action principale par tour sauf actions libres
+  if (!actions_libres.includes(type_action) && type_action !== 'fin_action') {
+    if (partie.actions_tour[joueur_id]) {
+      socket.emit('erreur', 'Vous avez déjà joué votre action ce tour.');
+      return;
+    }
+    partie.actions_tour[joueur_id] = type_action;
   }
 
   switch (type_action) {
@@ -635,11 +646,28 @@ function traiterAction(partie, joueur, joueur_id, type_action, donnees, socket) 
     case 'jouer_carte': {
       const { carte_uid, cible_id, choix } = donnees;
       const idx = joueur.main.findIndex(c => c.uid === carte_uid);
-      if (idx === -1) return socket.emit('erreur', 'Carte introuvable dans votre main.');
-      const carte = joueur.main.splice(idx, 1)[0];
-      appliquerEffetCarte(partie, joueur, joueur_id, carte, cible_id, choix, socket);
-      // Remettre dans la défausse sauf si retirée du jeu
-      if (!carte.hors_jeu) partie.defausse.push(carte);
+      if (idx === -1) {
+        partie.actions_tour[joueur_id] = false; // Annuler le verrou
+        return socket.emit('erreur', 'Carte introuvable dans votre main.');
+      }
+      // On garde la carte en main pendant l'exécution
+      const carte = joueur.main[idx];
+      let erreur_carte = false;
+      const socket_wrap = {
+        emit: (event, msg) => {
+          if (event === 'erreur') {
+            erreur_carte = true;
+            partie.actions_tour[joueur_id] = false; // Annuler le verrou
+          }
+          socket.emit(event, msg);
+        }
+      };
+      appliquerEffetCarte(partie, joueur, joueur_id, carte, cible_id, choix, socket_wrap);
+      // Retirer de la main et mettre en défausse seulement si succès
+      if (!erreur_carte) {
+        joueur.main.splice(idx, 1);
+        if (!carte.hors_jeu) partie.defausse.push(carte);
+      }
       break;
     }
 
@@ -749,11 +777,16 @@ function traiterAction(partie, joueur, joueur_id, type_action, donnees, socket) 
     }
 
     case 'fin_action':
-      partie.actions_tour[joueur_id] = true;
-      const tous_joue = partie.ordre_joueurs
-        .filter(jid => !partie.joueurs[jid]?.emprisonne)
-        .every(jid => partie.actions_tour[jid]);
+      partie.actions_tour[joueur_id] = 'fin';
+      // Vérifier si tous les joueurs actifs ont joué
+      const joueurs_actifs_fin = partie.ordre_joueurs.filter(jid => {
+        const j = partie.joueurs[jid];
+        return j && !j.mort && !j.emprisonne;
+      });
+      const tous_joue = joueurs_actifs_fin.every(jid => partie.actions_tour[jid]);
+      journaliser(partie, `${joueur.nom} a terminé son action (${joueurs_actifs_fin.filter(jid => partie.actions_tour[jid]).length}/${joueurs_actifs_fin.length} joueurs prêts).`);
       if (tous_joue) {
+        journaliser(partie, `--- Tous les joueurs ont joué — passage au tour suivant ---`, 'systeme');
         avancerTour(partie);
       }
       break;
@@ -1506,6 +1539,7 @@ function serialiserPartie(partie) {
       }])
     ),
     ordre_joueurs: partie.ordre_joueurs,
+    actions_tour: partie.actions_tour,
     journal: partie.journal.slice(-30),
     regles: partie.regles,
     batiments_config: BATIMENTS,
