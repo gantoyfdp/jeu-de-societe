@@ -678,6 +678,7 @@
 
       <div class="onglet-contenu" id="onglet-admin">
         <div class="section-titre">Modifier les règles</div>
+        <button class="btn btn-danger btn-sm" style="margin-bottom:12px" onclick="resetPartie()">🔄 Réinitialiser la partie</button>
         <div id="admin-regles"></div>
       </div>
     </div>
@@ -748,7 +749,23 @@ function rejoindrePartie() {
   });
 
   socket.on('erreur', (msg) => {
-    notif(msg, 'erreur');
+    if (msg === 'Partie déjà en cours.') {
+      // Proposer de rejoindre quand même ou de réinitialiser
+      if (confirm('Partie déjà en cours. Voulez-vous la réinitialiser ?')) {
+        socket.emit('reset_partie', { partie_id });
+      } else {
+        // Rejoindre quand même en tant que spectateur/joueur existant
+        notif('Utilisez un autre code de partie.', 'erreur');
+      }
+    } else {
+      notif(msg, 'erreur');
+    }
+  });
+
+  socket.on('partie_reset', () => {
+    document.getElementById('ecran-lobby').style.display = 'flex';
+    document.getElementById('ecran-jeu').style.display = 'none';
+    notif('Partie réinitialisée !', 'succes');
   });
 
   socket.on('nouveau_tour', ({ tour }) => {
@@ -762,6 +779,10 @@ function rejoindrePartie() {
 
   socket.on('anarchie', ({ compteur }) => {
     notif(`Retour à l'anarchie ! Compteur : ${compteur}/10`, 'erreur');
+  });
+
+  socket.on('evenement_subi', ({ message, type }) => {
+    notif(message, type || 'alerte');
   });
 
   socket.on('fin_partie', ({ message }) => {
@@ -1107,19 +1128,40 @@ function ouvrirModalRegime() {
   const carte_pp = ma_main_privee.find(c => c.effet === 'prise_de_pouvoir');
   if (!carte_pp) return notif('Vous n\'avez pas de carte Prise de pouvoir.', 'erreur');
 
-  const regimes = Object.entries(etat.regimes_config).filter(([r]) => r !== 'anarchie');
-  const body = `<div class="regimes-choix">${regimes.map(([regime, cfg]) => {
-    const peut = verifierPrerequisClient(moi, regime, cfg);
-    return `<div class="regime-option${peut ? '' : '" style="opacity:0.4'}" 
-      style="background:${cfg.couleur}22;border-color:${cfg.couleur}"
-      onclick="${peut ? `choisirRegime('${regime}')` : 'alert(\"Prérequis non remplis\")'}">
-      <div class="regime-emoji">${cfg.emoji}</div>
-      <div class="regime-nom">${cfg.nom}</div>
-      <div class="regime-pre">${peut ? '✓ Prérequis remplis' : '✗ Prérequis manquants'}</div>
-    </div>`;
-  }).join('')}</div>`;
+  function prereqTexte(cfg) {
+    return Object.entries(cfg.prerequis || {}).map(([type, val]) => {
+      if (type === 'or_min') return val + ' or min';
+      if (type.endsWith('_niveau')) return type.replace('_niveau','') + ' niv.' + val + '+';
+      return val + '× ' + type;
+    }).join(', ') || 'Aucun';
+  }
 
-  ouvrirModal('Prise de pouvoir', 'Choisissez votre régime. Vérifiez les prérequis.', [], body);
+  function victoireTexte(cfg) {
+    const v = cfg.victoire;
+    if (!v) return '';
+    if (v.type === 'tours_au_pouvoir') return 'Tenir ' + v.valeur + ' tours';
+    if (v.type === 'influence') return v.valeur + ' influence (' + v.tours_consecutifs + ' tours)';
+    if (v.type === 'or') return v.valeur + ' or (' + v.tours_consecutifs + ' tours)';
+    if (v.type === 'batiments_automatises') return v.valeur + ' bât. auto (' + v.tours_consecutifs + ' tours)';
+    if (v.type === 'emprisonne_ou_mort') return 'Emprisonner moitié+1';
+    if (v.type === 'temples_converts') return 'Temples ★★ > joueurs (2 tours)';
+    return '';
+  }
+
+  const regimes = Object.entries(etat.regimes_config).filter(([r]) => r !== 'anarchie');
+  let body = '<div class="regimes-choix">';
+  regimes.forEach(([regime, cfg]) => {
+    const peut = verifierPrerequisClient(moi, regime, cfg);
+    body += '<div class="regime-option" style="background:' + cfg.couleur + '22;border-color:' + cfg.couleur + ';opacity:' + (peut ? 1 : 0.5) + ';cursor:' + (peut ? 'pointer' : 'default') + '" onclick="' + (peut ? 'choisirRegime(\'' + regime + '\')' : '') + '">';
+    body += '<div class="regime-emoji">' + cfg.emoji + '</div>';
+    body += '<div class="regime-nom">' + cfg.nom + '</div>';
+    body += '<div class="regime-pre" style="color:' + (peut ? '#aaa' : 'var(--rouge)') + '">' + (peut ? '✓ ' : '✗ ') + prereqTexte(cfg) + '</div>';
+    body += '<div class="regime-pre" style="color:var(--or)">🏆 ' + victoireTexte(cfg) + '</div>';
+    body += '</div>';
+  });
+  body += '</div>';
+
+  ouvrirModal('Prise de pouvoir', 'Choisissez votre régime.', [], body);
 }
 
 function verifierPrerequisClient(joueur, regime, cfg) {
@@ -1421,6 +1463,12 @@ function choisirEchange(cible_id) {
 function finAction() {
   socket.emit('action', { partie_id, type_action: 'fin_action', donnees: {} });
   notif('Action terminée.', 'info');
+}
+
+function resetPartie() {
+  if (confirm('Réinitialiser complètement la partie ? Tout sera perdu.')) {
+    socket.emit('reset_partie', { partie_id });
+  }
 }
 
 function modifierRegle(cle, valeur) {
